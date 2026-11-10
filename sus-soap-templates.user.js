@@ -7,8 +7,8 @@
 // @match        https://app.sussoftwareoficial.com.br/*
 // @run-at       document-idle
 // @grant        none
-// @updateURL    https://gist.github.com/viniciusjpa/0d80619e9a72800b6fb5125b4ed29d3d/raw/7f615f997fb7027009257349a49f87a3a4521fd6/sus-soap-templates.user.js
-// @downloadURL  https://gist.github.com/viniciusjpa/0d80619e9a72800b6fb5125b4ed29d3d/raw/7f615f997fb7027009257349a49f87a3a4521fd6/sus-soap-templates.user.js
+// @updateURL    https://github.com/viniciusjpa/SusSoftHelper-releases/raw/refs/heads/main/sus-soap-templates.user.js
+// @downloadURL  https://github.com/viniciusjpa/SusSoftHelper-releases/raw/refs/heads/main/sus-soap-templates.user.js
 // ==/UserScript==
 
 (function () {
