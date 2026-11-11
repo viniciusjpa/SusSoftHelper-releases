@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SUS Software – Automação SOAP (PSF)
 // @namespace    viverbem
-// @version      1.4.0
+// @version      1.5.0
 // @description  Preenche o SOAP a partir de atalhos do AHK, abre o SOAP automaticamente, recolhe Antecedentes, marca o tipo de atendimento, adiciona botões na barra superior (fixa), adiciona vários cidadãos na fila de uma vez e lança resultados de exames digitados em texto livre.
 // @author       Vinicius Farias Freitas
 // @match        https://app.sussoftwareoficial.com.br/*
@@ -30,7 +30,9 @@
             + '&status=aguardando&status=em_escuta_inicial&status=em_atendimento'
             + '&unidade_saude_id=765',
 
-        urlViverBem: 'https://viverbemi.vercel.app/pacientes?q=',
+        urlReceitas: 'https://viverbemi.vercel.app/pacientes?q=',
+        // Página do sistema de receitas que recebe o cadastro do paciente por postMessage (botão +)
+        urlReceitasImportar: 'https://viverbemi.vercel.app/pacientes/importar',
 
         // Ordem de preferência quando nenhum "Tipo de atendimento" está marcado
         tiposAtendimento: ['tipo-consulta_agendada_programada', 'tipo-consulta_no_dia'],
@@ -63,9 +65,9 @@
         larguraMinimaUsf: 200,    // px; se faltar espaço, o breadcrumb é encurtado para o botão caber
         botaoAltura: 30,          // px, botões inseridos pelo script
         botaoFonte: 12,           // px
-        pacienteFonte: 13,        // px, linha "NOME (44a)" que aparece sob a barra ao rolar
-        pacienteAltura: 16,       // px
-        pacienteSubir: 2,         // px que o texto sobe em relação ao meio da faixa
+        pacienteFonte: 12,        // px, linha "NOME (44a)" que aparece sob a barra ao rolar
+        pacienteAltura: 8,       // px
+        pacienteSubir: 8,         // px que o texto sobe em relação ao meio da faixa
         pacienteCor: '#000',
         modalExamesLargura: 980,  // px, largura máxima do modal de exames
         modalExamesAlturaTexto: 150, // px, altura da caixa de texto do modal de exames
@@ -148,7 +150,7 @@
             cursor:pointer; white-space:nowrap; transition:background .15s, border-color .15s; }
         #susauto-bar button:hover { background:#eff6ff; border-color:#93c5fd; }
         #susauto-bar button:disabled { opacity:.45; cursor:not-allowed; }
-        #susauto-status { padding:0 8px !important; }
+        #susauto-status, #susauto-cadastrar { padding:0 8px !important; }
         #susauto-status .dot { width:10px; height:10px; border-radius:50%; background:#16a34a;
             box-shadow:0 0 0 0 rgba(22,163,74,.6); transition:background .2s; }
         #susauto-status[data-st=listening] .dot { animation: susauto-breath 2.4s ease-in-out infinite; }
@@ -174,6 +176,8 @@
             background:rgba(255,255,255,.95); border-bottom:1px solid #e5e7eb; box-shadow:0 2px 4px rgba(0,0,0,.05);
             color:${UI.pacienteCor}; font:700 ${UI.pacienteFonte}px/1 system-ui,sans-serif; letter-spacing:.02em;
             white-space:nowrap; overflow:visible; pointer-events:none; }
+        /* Só o nome recebe clique (copia); o resto da faixa deixa o clique passar para a página */
+        #susauto-paciente span { pointer-events:auto; cursor:copy; }
         #susauto-paciente.show { display:block; }
         /* Centro horizontal = centro do botão da USF (--centro, calculado no script) */
         #susauto-paciente span { position:absolute; top:50%; left:var(--centro, 50%);
@@ -299,7 +303,7 @@
     }
 
     /* =====================================================================
-     * BARRA SUPERIOR: status + Atendimentos + ViverBem
+     * BARRA SUPERIOR: status + Atendimentos + Receitas
      * ===================================================================== */
     function documentoPaciente() {
         // Procura os rótulos "CPF" e "CNS" do cabeçalho do atendimento
@@ -339,14 +343,28 @@
             lista.title = 'Voltar para a lista de atendimentos';
             lista.addEventListener('click', () => { location.href = CFG.urlListaAtendimentos; });
 
-            const vb = document.createElement('button');
-            vb.id = 'susauto-viverbem';
-            vb.type = 'button';
-            vb.textContent = '↗ ViverBem';
-            vb.addEventListener('click', () => {
+            const rec = document.createElement('button');
+            rec.id = 'susauto-receitas';
+            rec.type = 'button';
+            // Ícone "comprimido"
+            rec.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"'
+                + ' stroke-linejoin="round" aria-hidden="true"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/>'
+                + '<path d="m8.5 8.5 7 7"/></svg>Receitas';
+            rec.addEventListener('click', (ev) => {
+                // Shift+clique: copia o JSON do cadastro (base da futura integração com o sistema de receitas)
+                if (ev.shiftKey) { trabalhar('copiar dados do paciente', copiarDadosPaciente); return; }
                 const doc = documentoPaciente();
-                if (doc) window.open(CFG.urlViverBem + doc, '_blank', 'noopener');
+                if (doc) window.open(CFG.urlReceitas + doc, '_blank', 'noopener');
             });
+
+            const cad = document.createElement('button');
+            cad.id = 'susauto-cadastrar';
+            cad.type = 'button';
+            cad.setAttribute('aria-label', 'Cadastrar ou atualizar o paciente no sistema de receitas');
+            // Ícone "+"
+            cad.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"'
+                + ' aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+            cad.addEventListener('click', cadastrarNoReceitas);
 
             const fila = document.createElement('button');
             fila.id = 'susauto-fila';
@@ -365,7 +383,7 @@
             ex.title = 'Lançar resultados de exames a partir do texto (Objetivo)';
             ex.addEventListener('click', abrirModalExames);
 
-            bar.append(st, lista, fila, ex, vb);
+            bar.append(st, lista, fila, ex, rec, cad);
             atualizarStatus();
         }
 
@@ -378,13 +396,19 @@
             document.body.appendChild(bar);
         }
 
-        // ViverBem e Exames só dentro do atendimento; "Adicionar na fila" só na lista de atendimentos
+        // Receitas e Exames só dentro do atendimento; "Adicionar na fila" só na lista de atendimentos
         const noAtendimento = reAtendimento.test(location.pathname);
-        const vb = document.getElementById('susauto-viverbem');
+        const rec = document.getElementById('susauto-receitas');
         const doc = documentoPaciente();
-        vb.hidden = !noAtendimento;
-        vb.disabled = !doc;
-        vb.title = doc ? `Abrir no ViverBem (${doc})` : 'Aguardando os dados do paciente';
+        rec.hidden = !noAtendimento;
+        rec.disabled = !doc;
+        rec.title = doc ? `Abrir no sistema de receitas (${doc})\nShift+clique: copiar os dados do paciente (JSON)`
+            : 'Aguardando os dados do paciente';
+        const cad = document.getElementById('susauto-cadastrar');
+        cad.hidden = !noAtendimento;
+        cad.disabled = !doc;
+        cad.title = doc ? 'Paciente não encontrado no Receitas? Cadastrar / atualizar com os dados deste atendimento'
+            : 'Aguardando os dados do paciente';
         document.getElementById('susauto-exames').hidden = !noAtendimento;
 
         const fila = document.getElementById('susauto-fila');
@@ -457,12 +481,23 @@
         if (!linha) {
             linha = document.createElement('div');
             linha.id = 'susauto-paciente';
+            linha.addEventListener('click', async () => {
+                const nome = linha.dataset.nome;
+                if (!nome) return;
+                try {
+                    await navigator.clipboard.writeText(nome);
+                    avisar(`Copiado: ${nome}`);
+                } catch (e) {
+                    avisar('Não foi possível copiar o nome: ' + e.message, 'erro');
+                }
+            });
         }
         if (linha.parentElement !== header) header.appendChild(linha);
         const idade = noAtendimento && [...document.querySelectorAll('main span')]
             .find((s) => s.children.length === 0 && /^\d+\s*(anos?|m[eê]s|meses|dias?)\b/i.test(texto(s)));
         const nome = idade?.previousElementSibling;
         if (!nome) { linha.classList.remove('show'); return; }
+        linha.dataset.nome = texto(nome);
         const rotulo = `${texto(nome)} (${idadeCurta(texto(idade))})`;
         if (linha.textContent !== rotulo) {
             linha.replaceChildren(document.createElement('span'));
@@ -474,6 +509,191 @@
         if (r?.width) linha.style.setProperty('--centro', (r.left + r.width / 2 - header.getBoundingClientRect().left) + 'px');
         else linha.style.removeProperty('--centro');
         linha.classList.toggle('show', nome.getBoundingClientRect().bottom < header.getBoundingClientRect().bottom);
+    }
+
+    /* =====================================================================
+     * DADOS DO PACIENTE (JSON para o sistema de receitas)
+     * Lê o cadastro pelas Server Actions do próprio SUS Software (as mesmas da aba
+     * "Cadastro cidadão"), sem abrir a aba. Formato descrito em docs/paciente-json.md
+     * ===================================================================== */
+    const FORMATO_PACIENTE = { formato: 'sussoft.paciente', versao: 1 };
+
+    // Raça/cor: nome no SUS Software -> código RNDS/BR Core (CodeSystem BRRacaCor).
+    // Os códigos internos do SUS Software NÃO seguem essa tabela (lá 3 = AMARELA, 4 = PARDA)
+    const RACA_COR = { 'BRANCA': '01', 'PRETA': '02', 'PARDA': '03', 'AMARELA': '04', 'INDÍGENA': '05', 'SEM INFORMAÇÃO': '99' };
+    const UF_SIGLA = { 'ACRE': 'AC', 'ALAGOAS': 'AL', 'AMAPÁ': 'AP', 'AMAZONAS': 'AM', 'BAHIA': 'BA', 'CEARÁ': 'CE',
+        'DISTRITO FEDERAL': 'DF', 'ESPÍRITO SANTO': 'ES', 'GOIÁS': 'GO', 'MARANHÃO': 'MA', 'MATO GROSSO': 'MT',
+        'MATO GROSSO DO SUL': 'MS', 'MINAS GERAIS': 'MG', 'PARÁ': 'PA', 'PARAÍBA': 'PB', 'PARANÁ': 'PR', 'PERNAMBUCO': 'PE',
+        'PIAUÍ': 'PI', 'RIO DE JANEIRO': 'RJ', 'RIO GRANDE DO NORTE': 'RN', 'RIO GRANDE DO SUL': 'RS', 'RONDÔNIA': 'RO',
+        'RORAIMA': 'RR', 'SANTA CATARINA': 'SC', 'SÃO PAULO': 'SP', 'SERGIPE': 'SE', 'TOCANTINS': 'TO' };
+
+    // Props do componente da página do atendimento (cidadaoId, cidadao do cabeçalho, sessao...)
+    function propsAtendimento() {
+        const el = document.querySelector('[role=tab][id$="-trigger-soap"]');
+        const k = el && Object.keys(el).find((x) => x.startsWith('__reactFiber'));
+        for (let f = k && el[k]; f; f = f.return) {
+            const p = f.memoizedProps;
+            if (p && typeof p === 'object' && 'cidadaoId' in p && 'cidadao' in p) return p;
+        }
+        return null;
+    }
+
+    // O id de cada Server Action muda a cada deploy do SUS Software: descobre pelo nome nos scripts já carregados
+    const acoesServidor = {};
+    async function idAcao(nome) {
+        if (acoesServidor[nome]) return acoesServidor[nome];
+        const re = /createServerReference\)\("([0-9a-f]{40,})",[^)]{0,160}?"(\w+Action)"\)/g;
+        for (const s of document.scripts) {
+            if (!/\/_next\/static\/.+\.js/.test(s.src)) continue;
+            const t = await (await fetch(s.src)).text();
+            for (const m of t.matchAll(re)) acoesServidor[m[2]] ??= m[1];
+            if (acoesServidor[nome]) return acoesServidor[nome];
+        }
+        throw new Error(`ação "${nome}" não encontrada (o SUS Software mudou?)`);
+    }
+
+    // Chama a Server Action e devolve o valor da resposta RSC (a linha 0 aponta a linha do resultado: {"a":"$@1"})
+    async function chamarAcao(nome, args) {
+        const r = await fetch(location.pathname, {
+            method: 'POST', body: JSON.stringify(args),
+            headers: { 'Next-Action': await idAcao(nome), Accept: 'text/x-component', 'Content-Type': 'text/plain;charset=UTF-8' },
+        });
+        if (!r.ok) { delete acoesServidor[nome]; throw new Error(`${nome}: HTTP ${r.status}`); }
+        const linhas = new Map((await r.text()).split('\n').filter(Boolean)
+            .map((l) => [l.slice(0, l.indexOf(':')), l.slice(l.indexOf(':') + 1)]));
+        const ref = String(JSON.parse(linhas.get('0') || '{}').a || '').replace(/^\$@/, '');
+        if (!linhas.has(ref)) throw new Error(`${nome}: resposta inesperada`);
+        let v = JSON.parse(linhas.get(ref), (k, x) => x === '$undefined' ? null
+            : typeof x === 'string' && x.startsWith('$$') ? x.slice(1) : x);
+        // Desembrulha { success, data } (às vezes aninhado)
+        while (v && typeof v === 'object' && 'success' in v && 'data' in v) {
+            if (!v.success) throw new Error(`${nome}: ${v.error || v.message || 'falhou'}`);
+            v = v.data;
+        }
+        return v;
+    }
+
+    // Tabelas de apoio (raças, UFs, municípios...): ~5600 itens, busca uma vez por carregamento da página
+    let tabelasApoio = null;
+    const lookups = () => (tabelasApoio ??= chamarAcao('getLookupsAction', []).catch((e) => { tabelasApoio = null; throw e; }));
+
+    const vazio = (x) => (x === '' || x == null ? null : x);
+    const digitos = (x) => vazio(String(x ?? '').replace(/\D/g, ''));
+    const dataIso = (x) => {
+        const s = String(x ?? '');
+        const br = s.match(/^(\d\d)\/(\d\d)\/(\d{4})$/);
+        return br ? `${br[3]}-${br[2]}-${br[1]}` : vazio(s.slice(0, 10)); // só a data: "T00:00:00Z" viraria o dia anterior no fuso -03
+    };
+
+    async function dadosPaciente() {
+        const pg = propsAtendimento();
+        if (!pg?.cidadaoId) throw new Error('abra um atendimento para ler os dados do paciente');
+        const origem = { sistema: 'SUS Software', cidadaoId: pg.cidadaoId, cnesUnidade: vazio(pg.sessao?.unidade_saude_cnes),
+            exportadoEm: new Date().toISOString() };
+        let c, lk;
+        try {
+            [c, lk] = await Promise.all([chamarAcao('getCidadaoByIdAction', [pg.cidadaoId]), lookups()]);
+        } catch (e) {
+            // Sem as Server Actions: só o que o cabeçalho do atendimento mostra
+            LOG('cadastro completo indisponível', e);
+            const h = pg.cidadao || {};
+            return { ...FORMATO_PACIENTE, completo: false, aviso: e.message, origem: { ...origem, prontuario: digitos(h.prontuario) },
+                paciente: { nome: vazio(h.nome), dataNascimento: dataIso(h.dataNascimento),
+                    sexo: ({ masculino: 'M', feminino: 'F' })[String(h.sexo).toLowerCase()] || null,
+                    cpf: digitos(h.cpf), cns: digitos(h.cns), nomeMae: vazio(h.nomeMae) } };
+        }
+        const nome = (lista, cod) => (vazio(cod) == null ? null : lk[lista]?.find((x) => x.cod === String(cod))?.nome ?? null);
+        const municipio = (cod) => {
+            const n = nome('municipios', cod); // "JOÃO PESSOA - PB"
+            const m = n?.match(/^(.*) - ([A-Z]{2})$/);
+            return m ? { nome: m[1], uf: m[2] } : { nome: n, uf: null };
+        };
+        const raca = nome('racas_cores', c.raca);
+        const e = c.endereco || {};
+        const nat = c.naturalizacao || {};
+        const munEnd = municipio(e.municipio);
+        const munNasc = municipio(nat.municipioNascimento);
+        return {
+            ...FORMATO_PACIENTE, completo: true,
+            origem: { ...origem, prontuario: digitos(c.prontuario), uuidEsus: vazio(c.uuidESus) },
+            paciente: {
+                nome: vazio(c.nomeCompleto),
+                nomeSocial: vazio(c.nomeSocial),
+                dataNascimento: dataIso(c.dataNascimento),
+                sexo: vazio(c.sexo),
+                cpf: digitos(c.cpf),
+                cns: digitos(c.cns),
+                telefone: digitos(c.telefone),
+                nomeMae: c.desconhecidoMae ? null : vazio(c.nomeMae),
+                maeDesconhecida: !!c.desconhecidoMae,
+                nomePai: c.desconhecidoPai ? null : vazio(c.nomePai),
+                paiDesconhecido: !!c.desconhecidoPai,
+                racaCor: raca ? { codigo: RACA_COR[raca] ?? null, descricao: raca } : null,
+                etniaIndigena: nome('etnias', c.etnia),
+                estadoCivil: nome('estados_civis', c.estadoCivil),
+                pcd: c.pcd === 'sim',
+                nacionalidade: nome('nacionalidades', nat.nacionalidade)?.toUpperCase() ?? null,
+                naturalidade: { municipio: munNasc.nome, uf: UF_SIGLA[nome('ufs', nat.ufNascimento)] ?? munNasc.uf,
+                    pais: vazio(nat.paisOrigem) ?? nome('paises', nat.codPaisOrigem) },
+                nis: digitos(nat.numeroNis),
+                endereco: {
+                    cep: digitos(e.cep),
+                    logradouro: vazio(e.logradouro) ?? vazio(e.endereco),
+                    numero: e.semNumero ? 'S/N' : vazio(e.numero),
+                    complemento: vazio(e.complemento),
+                    bairro: vazio(e.bairro),
+                    municipio: munEnd.nome,
+                    uf: UF_SIGLA[nome('ufs', e.estado)] ?? munEnd.uf,
+                    pais: 'BRASIL',
+                    pontoReferencia: vazio(e.pontoReferencia),
+                },
+            },
+        };
+    }
+
+    async function copiarDadosPaciente() {
+        const d = await dadosPaciente();
+        await navigator.clipboard.writeText(JSON.stringify(d, null, 2));
+        avisar(d.completo ? `Dados de ${d.paciente.nome} copiados (JSON)` : `Copiado só o básico do cabeçalho: ${d.aviso}`,
+            d.completo ? 'ok' : 'aviso');
+    }
+
+    /* Botão (+): abre a página de importação do sistema de receitas e entrega o JSON por postMessage.
+     * Protocolo: a página avisa { tipo: 'pronto' } para a janela que a abriu e responde com o modal preenchido.
+     * Só conversa com a aba aberta aqui e com a origem do sistema de receitas (dados de saúde: nunca '*') */
+    function cadastrarNoReceitas() {
+        const url = CFG.urlReceitasImportar;
+        const origem = new URL(url).origin;
+        // Sem 'noopener': a página precisa de window.opener para pedir os dados
+        const win = window.open(url, '_blank');
+        if (!win) { avisar('O navegador bloqueou a nova aba. Permita pop-ups para o SUS Software.', 'erro'); return; }
+        const dados = trabalhar('ler dados do paciente', dadosPaciente); // resolve undefined se falhar (trabalhar já avisa)
+        let enviados = 0;
+
+        async function aoReceber(ev) {
+            if (ev.source !== win || ev.origin !== origem || ev.data?.tipo !== 'pronto') return;
+            const d = await dados;
+            if (!d) { avisar('Sem os dados do paciente. Use Shift+clique em Receitas para copiar o JSON e cole lá.', 'erro'); return; }
+            win.postMessage(d, origem); // a cada "pronto" (o login no Receitas recarrega a página e pede de novo)
+            if (!enviados++) avisar(d.completo ? `Dados de ${d.paciente.nome} enviados ao Receitas. Confira e confirme lá.`
+                : `Enviado só o básico do cabeçalho: ${d.aviso}`, d.completo ? 'ok' : 'aviso');
+        }
+        window.addEventListener('message', aoReceber);
+
+        const inicio = Date.now();
+        let avisouDemora = false;
+        const vigia = setInterval(() => {
+            const passou = Date.now() - inicio;
+            if (!enviados && !avisouDemora && passou >= 30000) {
+                avisouDemora = true;
+                avisar('O Receitas ainda não pediu os dados (falta login?). Se a página de importação não existir,'
+                    + ' use Shift+clique em Receitas para copiar o JSON e cole lá.', 'aviso');
+            }
+            if (win.closed || passou > 15 * 60000) {
+                clearInterval(vigia);
+                window.removeEventListener('message', aoReceber);
+            }
+        }, 1000);
     }
 
     /* =====================================================================
@@ -1610,7 +1830,7 @@
     }, true);
 
     // Para testes pelo console: SUSAUTO.aplicar({...})
-    window.SUSAUTO = { aplicar: (d) => receber(JSON.stringify(d)), CFG, UI, lerDocumentos, mostrarErros, interpretarExames,
+    window.SUSAUTO = { aplicar: (d) => receber(JSON.stringify(d)), CFG, UI, lerDocumentos, mostrarErros, interpretarExames, dadosPaciente,
         // texto livre ou lista [{ cod, nome, resultado, data: { iso } }]
         lancarExames: (x) => trabalhar('lançar exames', () => lancarExames(typeof x === 'string' ? interpretarExames(x).linhas : x)) };
 
